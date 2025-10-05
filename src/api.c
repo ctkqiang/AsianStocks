@@ -5,11 +5,17 @@
 #include <stdlib.h>
 #include <time.h>
 #include <pthread.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 #include "../includes/routes.h"
 #include "../includes/bursa.h"
 
 #define LOG_FILE "build/server.log"
+#define MAX_PORT_RETRIES 10
+#define PORT_INCREMENT 1
 
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -18,7 +24,7 @@ static void log_event(const char *level, const char *method, const char *url, in
 
     FILE *logf = fopen(LOG_FILE, "a");
     if (!logf) {
-        perror("log open failed");
+        perror("日志文件打开失败");
         pthread_mutex_unlock(&log_mutex);
         return;
     }
@@ -34,6 +40,30 @@ static void log_event(const char *level, const char *method, const char *url, in
 
     fclose(logf);
     pthread_mutex_unlock(&log_mutex);
+}
+
+static int check_port_available(uint16_t port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        fprintf(stderr, "错误: 无法创建套接字: %s\n", strerror(errno));
+        return 0;
+    }
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+
+    // 设置套接字选项以允许重用地址
+    int opt = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        fprintf(stderr, "警告: 设置套接字选项失败: %s\n", strerror(errno));
+    }
+
+    int result = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+    close(sock);
+
+    return result == 0;
 }
 
 static enum MHD_Result send_json(
@@ -72,6 +102,12 @@ static enum MHD_Result handle_request(
     size_t *upload_data_size,
     void **con_cls
 ) {
+    (void)cls;
+    (void)version;
+    (void)upload_data;
+    (void)upload_data_size;
+    (void)con_cls;
+
     if (!connection || !url || !method) return MHD_NO;
 
     struct json_object *res = json_object_new_object();
@@ -118,7 +154,6 @@ static enum MHD_Result handle_request(
         return ret;
     }
 
-
     json_object_object_add(res, "error", json_object_new_string("not found"));
     enum MHD_Result ret = send_json(connection, MHD_HTTP_NOT_FOUND, res);
     log_event("ERROR", method, url, 404);
@@ -127,27 +162,50 @@ static enum MHD_Result handle_request(
 }
 
 void start_api() {
-    struct MHD_Daemon *daemon = MHD_start_daemon(
-        MHD_USE_INTERNAL_POLLING_THREAD,
-        API_PORT,
-        NULL,
-        NULL,
-        &handle_request,
-        NULL,
-        MHD_OPTION_END
-    );
+    uint16_t port = API_PORT;
+    struct MHD_Daemon *daemon = NULL;
+    int retries = 0;
+
+    // 尝试在不同端口启动服务器
+    while (retries < MAX_PORT_RETRIES) {
+        if (!check_port_available(port)) {
+            fprintf(stderr, "警告: 端口 %d 已被占用，尝试下一个端口...\n", port);
+            port += PORT_INCREMENT;
+            retries++;
+            continue;
+        }
+
+        daemon = MHD_start_daemon(
+            MHD_USE_INTERNAL_POLLING_THREAD | MHD_USE_ERROR_LOG,
+            port,
+            NULL,
+            NULL,
+            &handle_request,
+            NULL,
+            MHD_OPTION_CONNECTION_TIMEOUT, (unsigned int) 120,
+            MHD_OPTION_END
+        );
+
+        if (daemon) break;
+
+        fprintf(stderr, "警告: 在端口 %d 启动服务器失败，尝试下一个端口...\n", port);
+        port += PORT_INCREMENT;
+        retries++;
+    }
 
     if (!daemon) {
-        fprintf(stderr, "FATAL: HTTP server failed to start\n");
+        fprintf(stderr, "严重错误: 在尝试 %d 个端口后服务器仍无法启动\n", MAX_PORT_RETRIES);
+        fprintf(stderr, "请检查系统资源和权限设置\n");
         exit(EXIT_FAILURE);
     }
 
-    printf("JSON API running safely on http://localhost:%d\n", API_PORT);
+    printf("JSON API 服务器成功启动在 http://localhost:%d\n", port);
     log_event("INFO", "SERVER", "START", 200);
 
+    printf("按回车键停止服务器...\n");
     getchar();
+    
     MHD_stop_daemon(daemon);
-
     log_event("INFO", "SERVER", "STOP", 0);
-    printf("Server stopped\n");
+    printf("服务器已停止\n");
 }

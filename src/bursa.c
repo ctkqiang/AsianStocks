@@ -5,6 +5,7 @@
 #include <regex.h>
 #include <json-c/json.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "../includes/endpoints.h"
 #include "../includes/bursa.h"
@@ -12,43 +13,63 @@
 #include "../includes/announcement_entry.h"
 
 #define MAX_RETRIES 3
-#define RETRY_DELAY 2
+#define RETRY_DELAY 5  // ~ 试延迟到5秒
+#define INITIAL_BUFFER_SIZE 32768  // ?大概32KB
+#define MAX_BUFFER_SIZE (10 * 1024 * 1024)  // ?大概10MB
 
-/**
- * 写入内存回调函数，用于将接收到的数据写入到内存缓冲区中
- * @param contents 指向接收到的数据内容的指针
- * @param size 每个数据元素的大小（字节数）
- * @param nmemb 数据元素的数量
- * @param userp 指向用户自定义数据结构的指针（这里是指向MemoryStruct结构体）
- * @return 返回实际写入的字节数，如果分配内存失败则返回0
- */
+#define CONNECT_TIMEOUT 10L
+#define TRANSFER_TIMEOUT 30L
+#define LOW_SPEED_TIME 5L
+#define LOW_SPEED_LIMIT 100L
+
+static void log_with_time(const char *level, const char *fmt, ...) {
+    time_t now;
+    struct tm *tm_info;
+    char time_str[26];
+    va_list args;
+
+    time(&now);
+    tm_info = localtime(&now);
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    fprintf(stderr, "[%s] [%s] ", time_str, level);
+    
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    
+    fprintf(stderr, "\n");
+}
+
+#define LOG_INFO(fmt, ...) log_with_time("INFO", fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) log_with_time("ERROR", fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) log_with_time("DEBUG", fmt, ##__VA_ARGS__)
+
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t realSize = size * nmemb;
     struct MemoryStruct *mem = (struct MemoryStruct *)userp;
 
+    // 检查是否超过最大缓冲区大小
+    if (mem->size + realSize > MAX_BUFFER_SIZE) {
+        LOG_ERROR("接收数据超过最大限制 (%d bytes)", MAX_BUFFER_SIZE);
+        return 0;
+    }
+
     char *ptr = realloc(mem->memory, mem->size + realSize + 1);
-    
-    /** 
-     * 当内存不足时，返回0
-     */
-    if (ptr == NULL) {
-        fprintf(stderr, "[error] 内存分配失败\n");
+    if (!ptr) {
+        LOG_ERROR("内存分配失败 (请求大小: %zu bytes)", mem->size + realSize + 1);
         return 0;
     }
 
     mem->memory = ptr;
     memcpy(&(mem->memory[mem->size]), contents, realSize);
-    
     mem->size += realSize;
     mem->memory[mem->size] = 0;
 
+    LOG_DEBUG("成功接收数据: %zu bytes", realSize);
     return realSize;
 }
 
-/**
- * 获取网页内容，支持重试机制
- * @return 成功返回HTML内容，失败返回NULL
- */
 static char *fetch_html() {
     CURL *curl = NULL;
     CURLcode res;
@@ -56,75 +77,105 @@ static char *fetch_html() {
     int retry_count = 0;
     char *result = NULL;
     struct curl_slist *headers = NULL;
+    long http_code = 0;
+    char curl_errbuf[CURL_ERROR_SIZE] = {0};
+
+    chunk.memory = malloc(INITIAL_BUFFER_SIZE);
+    if (!chunk.memory) {
+        LOG_ERROR("初始内存分配失败");
+        return NULL;
+    }
+    chunk.size = 0;
 
     while (retry_count < MAX_RETRIES) {
+        if (retry_count > 0) {
+            LOG_INFO("第 %d 次重试中...", retry_count + 1);
+            sleep(RETRY_DELAY * retry_count);  // 递增延迟时间
+        }
+
         curl = curl_easy_init();
         if (!curl) {
-            fprintf(stderr, "[error] curl初始化失败，重试次数：%d\n", retry_count + 1);
-            sleep(RETRY_DELAY);
-            retry_count++;
+            LOG_ERROR("CURL初始化失败");
             continue;
         }
 
-        // 添加必要的请求头
+        // 设置详细的错误信息
+        curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curl_errbuf);
+        
+        // 基本设置
+        curl_easy_setopt(curl, CURLOPT_URL, BURSA_COMPANY_ANNOUNCEMENT);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+        
+        // 超时设置
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, TRANSFER_TIMEOUT);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, LOW_SPEED_LIMIT);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, LOW_SPEED_TIME);
+
+        // 网络相关设置
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 120L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 60L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+        
+        // SSL设置
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+        // 请求头设置
         headers = curl_slist_append(headers, "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
         headers = curl_slist_append(headers, "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8");
         headers = curl_slist_append(headers, "Accept-Encoding: gzip, deflate, br");
         headers = curl_slist_append(headers, "Cache-Control: no-cache");
         headers = curl_slist_append(headers, "Pragma: no-cache");
         headers = curl_slist_append(headers, "Connection: keep-alive");
-
-        curl_easy_setopt(curl, CURLOPT_URL, BURSA_COMPANY_ANNOUNCEMENT);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-        
-        // 启用自动解压缩
-        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-        
-        // 添加SSL选项
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
+        // User-Agent设置
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, 
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/91.0.4472.124 Safari/537.36");
+
+        LOG_INFO("开始请求: %s", BURSA_COMPANY_ANNOUNCEMENT);
         res = curl_easy_perform(curl);
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
-        if (res == CURLE_OK) {
+        if (res == CURLE_OK && http_code == 200) {
+            LOG_INFO("请求成功 (HTTP %ld)", http_code);
             result = chunk.memory;
             break;
         }
 
-        fprintf(stderr, "[error] curl请求失败: %s，重试次数：%d\n", 
-                curl_easy_strerror(res), retry_count + 1);
+        const char *error_msg = curl_errbuf[0] ? curl_errbuf : curl_easy_strerror(res);
+        LOG_ERROR("请求失败 (HTTP %ld): %s", http_code, error_msg);
 
         curl_easy_cleanup(curl);
-        if (headers) {
-            curl_slist_free_all(headers);
-            headers = NULL;
+        curl_slist_free_all(headers);
+        headers = NULL;
+        
+        if (chunk.memory) {
+            free(chunk.memory);
+            chunk.memory = malloc(INITIAL_BUFFER_SIZE);
+            if (!chunk.memory) {
+                LOG_ERROR("重试时内存分配失败");
+                return NULL;
+            }
         }
-        free(chunk.memory);
-        chunk.memory = NULL;
         chunk.size = 0;
 
-        if (retry_count < MAX_RETRIES - 1) {
-            sleep(RETRY_DELAY);
-        }
         retry_count++;
     }
 
-    if (curl) {
-        curl_easy_cleanup(curl);
-    }
-    if (headers) {
-        curl_slist_free_all(headers);
-    }
+    if (curl) curl_easy_cleanup(curl);
+    if (headers) curl_slist_free_all(headers);
 
     if (!result) {
-        fprintf(stderr, "[error] 在%d次尝试后获取数据失败\n", MAX_RETRIES);
+        LOG_ERROR("在%d次尝试后获取数据失败", MAX_RETRIES);
+        if (chunk.memory) free(chunk.memory);
+        return NULL;
     }
 
     return result;
