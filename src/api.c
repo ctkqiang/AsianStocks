@@ -7,6 +7,7 @@
 #include <pthread.h>
 
 #include "../includes/routes.h"
+#include "../includes/bursa.h"
 
 #define LOG_FILE "build/server.log"
 
@@ -91,13 +92,32 @@ static enum MHD_Result handle_request(
         return ret;
     }
 
-    if (strcmp(url, BURSA) == 0) {
+   if (strcmp(url, BURSA) == 0) {
+        struct json_object *announcements = grab_company_announcement();
+
+        if (!announcements) {
+            json_object_object_add(res, "msg", json_object_new_string("failed"));
+            json_object_object_add(res, "error", json_object_new_string("unable to fetch announcements"));
+            
+            enum MHD_Result ret = send_json(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, res);
+            
+            log_event("ERROR", method, url, 500);
+            json_object_put(res);
+
+            return ret;
+        }
+
         json_object_object_add(res, "msg", json_object_new_string("ok"));
+        json_object_object_add(res, "data", announcements);
+
         enum MHD_Result ret = send_json(connection, MHD_HTTP_OK, res);
         log_event("INFO", method, url, 200);
+
         json_object_put(res);
+
         return ret;
     }
+
 
     json_object_object_add(res, "error", json_object_new_string("not found"));
     enum MHD_Result ret = send_json(connection, MHD_HTTP_NOT_FOUND, res);

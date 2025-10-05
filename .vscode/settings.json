@@ -91,6 +91,8 @@
     "format": "cpp",
     "text_encoding": "cpp",
     "ranges": "cpp",
-    "endpoints.h": "c"
+    "endpoints.h": "c",
+    "string.h": "c",
+    "memory.h": "c"
   }
 }

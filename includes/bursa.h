@@ -3,6 +3,8 @@
 #ifndef BURSA_H
 #define BURSA_H
 
-void grab_company_announcement();
+#include <json-c/json.h>
+
+struct json_object *grab_company_announcement();
 
 #endif
