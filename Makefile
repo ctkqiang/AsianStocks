@@ -1,16 +1,20 @@
-# Compiler and flags
-CC      = gcc
-CFLAGS  = -I/usr/include -Iincludes -Wall -Wextra -std=c11
+# Compiler
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c11 -Iincludes
 LDFLAGS = -lmicrohttpd -ljson-c -lcurl
 
-# Directories
-SRC_DIR    = src
-BUILD_DIR  = build
-INCLUDE_DIR = includes
+# Detect Homebrew include/lib paths
+HOMEBREW_PREFIX := $(shell brew --prefix)
+CFLAGS += -I$(HOMEBREW_PREFIX)/include
+LDFLAGS += -L$(HOMEBREW_PREFIX)/lib
 
-# Source files
-SRC        = $(wildcard $(SRC_DIR)/*.c)
-OUT        = $(BUILD_DIR)/server
+# Directories
+SRC_DIR = src
+BUILD_DIR = build
+
+# Sources
+SRC = $(wildcard $(SRC_DIR)/*.c)
+OUT = $(BUILD_DIR)/server
 
 # Targets
 all: $(OUT)
