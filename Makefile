@@ -25,6 +25,9 @@ $(OUT): $(SRC) | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
+run: $(OUT)
+	./$(OUT)
+
 clean:
 	rm -rf $(BUILD_DIR)/*
 

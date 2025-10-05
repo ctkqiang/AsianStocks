@@ -1,12 +1,10 @@
+#pragma once
+
 #ifndef ENDPOINTS_H
 #define ENDPOINTS_H
 
-#define API_PORT 3000
-
-#define INDEX_ENDPOINT "/"
-#define BURSA_ENDPOINT "/bursa"
-#define SSE_ENDPOINT "/sse" 
-#define SZSE_ENDPOINT "/szse"
-#define HKEX_ENDPOINT "/hkex"
+#define NASDAQ_COMPANY_ANNOUNCEMENT "https://www.nasdaq.com/european-market-activity/news/company-news"
+#define BURSA_COMPANY_ANNOUNCEMENT "https://www.bursamalaysia.com/market_information/announcements/company_announcement"
+#define SZSE_COMPANY_ANNOUNCEMENT "https://www.szse.cn/English/disclosures/announcements/"
 
 #endif

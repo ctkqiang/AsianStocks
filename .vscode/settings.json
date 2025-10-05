@@ -71,6 +71,26 @@
     "__locale": "c",
     "ios": "c",
     "*.ipp": "cpp",
-    "api.h": "c"
+    "api.h": "c",
+    "numbers": "cpp",
+    "__bit_reference": "cpp",
+    "__hash_table": "cpp",
+    "__split_buffer": "cpp",
+    "__tree": "cpp",
+    "array": "cpp",
+    "hash_map": "cpp",
+    "forward_list": "cpp",
+    "initializer_list": "cpp",
+    "list": "cpp",
+    "map": "cpp",
+    "set": "cpp",
+    "span": "cpp",
+    "string_view": "cpp",
+    "unordered_set": "cpp",
+    "chrono": "cpp",
+    "format": "cpp",
+    "text_encoding": "cpp",
+    "ranges": "cpp",
+    "endpoints.h": "c"
   }
 }
