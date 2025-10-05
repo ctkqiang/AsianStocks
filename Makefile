@@ -13,7 +13,7 @@ SRC_DIR = src
 BUILD_DIR = build
 
 # Sources
-SRC = $(wildcard $(SRC_DIR)/*.c)
+SRC = $(wildcard $(SRC_DIR)/*.c) main.c
 OUT = $(BUILD_DIR)/server
 
 # Targets

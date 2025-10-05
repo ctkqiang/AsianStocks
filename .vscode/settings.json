@@ -70,6 +70,7 @@
     "microhttpd.h": "c",
     "__locale": "c",
     "ios": "c",
-    "*.ipp": "cpp"
+    "*.ipp": "cpp",
+    "api.h": "c"
   }
 }
