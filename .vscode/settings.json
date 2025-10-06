@@ -93,6 +93,8 @@
     "ranges": "cpp",
     "endpoints.h": "c",
     "string.h": "c",
-    "memory.h": "c"
+    "memory.h": "c",
+    "bursa.h": "c",
+    "error.h": "c"
   }
 }

@@ -90,7 +90,8 @@ static char *fetch_html() {
     while (retry_count < MAX_RETRIES) {
         if (retry_count > 0) {
             LOG_INFO("第 %d 次重试中...", retry_count + 1);
-            sleep(RETRY_DELAY * retry_count);  // 递增延迟时间
+            // 改进重试延迟为指数退避
+            sleep(RETRY_DELAY * (1 << retry_count));  // 指数退避延迟
         }
 
         curl = curl_easy_init();
@@ -199,21 +200,21 @@ struct json_object *grab_company_announcement() {
         return NULL;
     }
 
-    // 使用更精确和健壮的正则表达式模式
+    // 改进正则表达式以处理更多变异
     const char *pattern =
-        "<tr[^>]*>"                                           // 开始标签
-        "\\s*<td[^>]*>[^<]*</td>"                           // 第一列（忽略）
-        "\\s*<td[^>]*>"                                     // 第二列开始
-        ".*?<div class=\"d-lg-inline-block d-none\">"      // 日期div开始
-        "([^<]+)"                                          // 捕获组1：日期
-        "</div>.*?</td>"                                   // 日期div结束
-        "\\s*<td[^>]*>"                                    // 第三列开始
-        "<a href=\"([^\"]+)\"[^>]*>"                      // 捕获组2：公司链接
-        "([^<]+)"                                         // 捕获组3：公司名称
-        "</a></td>"                                       // 第三列结束
-        "\\s*<td[^>]*>"                                   // 第四列开始
-        "<a href=\"([^\"]+)\"[^>]*>"                     // 捕获组4：公告链接
-        "([^<]+)"                                        // 捕获组5：公告标题
+        "<tr\\s*[^>]*>"                                       // 开始标签，允许属性和空白
+        "\\s*<td\\s*[^>]*>[^<]*</td>"                       // 第一列
+        "\\s*<td\\s*[^>]*>"                                 // 第二列
+        ".*?<div\\s*class=\"d-lg-inline-block d-none\">"   // 日期div
+        "\\s*([^<\\s]+)\\s*"                               // 捕获日期，修剪空白
+        "</div>.*?</td>"                                   // 结束
+        "\\s*<td\\s*[^>]*>"                                // 第三列
+        "<a\\s+href=\"([^\"]+)\"\\s*[^>]*>"               // 公司链接
+        "\\s*([^<]+)\\s*"                                 // 公司名称
+        "</a></td>"                                        // 结束
+        "\\s*<td\\s*[^>]*>"                               // 第四列
+        "<a\\s+href=\"([^\"]+)\"\\s*[^>]*>"              // 公告链接
+        "\\s*([^<]+)\\s*"                                // 公告标题
         "</a></td>";
 
     regex_t regex;
@@ -322,6 +323,15 @@ struct json_object *grab_company_announcement() {
             continue;
         }
 
+        // 添加日期验证
+        struct tm tm;
+        // 修复转义错误
+        if (strptime(date, "%d %b %Y", &tm) == NULL) {
+            LOG_ERROR("无效日期格式: %s", date);
+            cursor += matches[0].rm_eo;
+            continue;
+        }
+
         AnnouncementEntry entry = {
             .announcement_date = date,
             .company = company_name,
@@ -335,6 +345,8 @@ struct json_object *grab_company_announcement() {
             cursor += matches[0].rm_eo;
             continue;
         }
+
+        
 
         if (json_object_array_add(array, json_entry) < 0) {
             fprintf(stderr, "[error] 添加JSON条目到数组失败\n");
