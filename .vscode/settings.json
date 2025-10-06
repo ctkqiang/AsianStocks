@@ -95,6 +95,7 @@
     "string.h": "c",
     "memory.h": "c",
     "bursa.h": "c",
-    "error.h": "c"
+    "error.h": "c",
+    "routes.h": "c"
   }
 }
