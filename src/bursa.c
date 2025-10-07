@@ -83,7 +83,6 @@ static struct json_object *fetch_page(int page) {
 
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L); // Add this line for verbose output
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "gzip, deflate, br");
         curl_easy_setopt(curl, CURLOPT_COOKIE, "NPS_91b5b7fb_last_seen=1757148907498; saved_link=equities_prices,indices_prices,derivatives_prices,shariah_compliant_equities_prices,company_announcements; _ga=GA1.1.1910937320.1757148907; _cfuvid=ceY4XveCckGoncVaqbeFuJ2JxtWwyHMG6dCsv.kHAUU-1759763899018-0.0.1.1-604800000; _ga_3NMNNC625P=GS2.1.s1759763882$o6$g1$t1759763902$j40$l0$h0; cf_clearance=iWnbUjPTypEfLmSgvu8w6r6v6IkUo422G03Fhk.rBJQ-1759763903-1.2.1.1-qWQttthNL6uAe5PNthpH3CMOBjpc_y4CKKr.Xu7K936BS7vn.8V.eePp24a45mj9PMaDycQRUEf1GQfw_mi5EaMkFCVhnQ4Zkn6NtoNs51EVbfFtwvOhJhIRUj.76Atp9NJLiBQIxmD97.uqNsmktlkiG4cq9OX2wKMNrrzFkIvwwcwGuQfKY_w1Trd6iomXFQIWGmKhfk7XwJMcteJJzdCSapkEXkFDgIeLPc8xbMc; _locomotiveapp_session=SUJsL1l4UE01cjVPaG5qeEx3SG40QWd1SGZFQkxJMEY5a3ZKVmszV0Vuc2pqaWpnTDh0TDA0Q0p5R2RlNWdvQ2FzTW1wdlBla3lmZjlvOEtIM05sc1Y5OVR2NHIyMGh2YXI5R1J3cis5c2oyRlVKUU8wY2lDYkJpQ0dqVWJXL1RFbGorbXFIbVJZOVFvek92Y2ZrdTB3PT0tLU81aDJjTGNGVFYyTkl3OWEybDg0Snc9PQ%3D%3D--59dbbc50e80bf00bea962491b1ebaf42ecfc6802");
